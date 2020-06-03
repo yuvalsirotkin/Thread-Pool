@@ -1,0 +1,1 @@
+/usr/bin/cc -pthread -g   CMakeFiles/OS_ex4.dir/test.c.o CMakeFiles/OS_ex4.dir/osqueue.c.o CMakeFiles/OS_ex4.dir/threadPool.c.o  -o OS_ex4 

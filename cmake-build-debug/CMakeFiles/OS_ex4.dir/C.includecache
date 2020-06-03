@@ -1,0 +1,38 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/yuval/CLionProjects/OS_ex4/osqueue.h
+
+/home/yuval/CLionProjects/OS_ex4/test.c
+stdio.h
+-
+stdlib.h
+-
+unistd.h
+-
+osqueue.h
+/home/yuval/CLionProjects/OS_ex4/osqueue.h
+threadPool.h
+/home/yuval/CLionProjects/OS_ex4/threadPool.h
+stdio.h
+-
+stdlib.h
+-
+unistd.h
+-
+osqueue.h
+/home/yuval/CLionProjects/OS_ex4/osqueue.h
+threadPool.h
+/home/yuval/CLionProjects/OS_ex4/threadPool.h
+
+/home/yuval/CLionProjects/OS_ex4/threadPool.h
+signal.h
+-
+osqueue.h
+/home/yuval/CLionProjects/OS_ex4/osqueue.h
+
