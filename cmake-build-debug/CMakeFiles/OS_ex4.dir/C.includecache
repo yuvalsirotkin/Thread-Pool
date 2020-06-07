@@ -25,6 +25,8 @@ stdlib.h
 -
 unistd.h
 -
+pthread.h
+-
 osqueue.h
 /home/yuval/CLionProjects/OS_ex4/osqueue.h
 threadPool.h

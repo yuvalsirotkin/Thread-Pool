@@ -7,14 +7,28 @@
 
 void* mainFuncOfNewThread(void* tp);
 void freeAll(ThreadPool* tp);
+int coin = 0;
+int coout = 0;
 
 // create new thread pool with numOfThreads threads
 ThreadPool* tpCreate(int numOfThreads) {
     // create the thread pool
     ThreadPool* tp = (ThreadPool*)malloc(sizeof(ThreadPool));                                    //free the tp
-    pthread_cond_init(&tp->condition, NULL);
-    pthread_mutex_init(&tp->mutex, NULL);
-    pthread_mutex_init(&tp->mutexForCond, NULL);
+    if (pthread_cond_init(&tp->condition, NULL) != 0 ) {
+        perror("initialize condition failed");
+        free(tp);
+        exit(0);
+    }
+    if (pthread_mutex_init(&tp->mutex, NULL) != 0 ) {
+        perror("initialize mutex failed");
+        free(tp);
+        exit(0);
+    }
+    if (pthread_mutex_init(&tp->mutexForCond, NULL) != 0 ) {
+        perror("initialize mutex failed");
+        free(tp);
+        exit(0);
+    }
     // initialize the thread pool
     tp->maxNumOfTP = numOfThreads;
     tp->runExistTasks = 1;
@@ -24,11 +38,21 @@ ThreadPool* tpCreate(int numOfThreads) {
 
     int i;
     pthread_t* threadsList = (pthread_t*)malloc(sizeof(pthread_t*) * numOfThreads);       // free the threadList
-    for (i = 0; i < numOfThreads; i++) {
-        // create new user thread that will run the "mainFuncOfNewThread" function
-        pthread_create(&threadsList[i], NULL, &mainFuncOfNewThread, tp);
+    if (threadsList == NULL) {
+        perror("malloc failed");
+        free(tp);
+        exit(0);
     }
     tp->threads = threadsList;
+    for (i = 0; i < numOfThreads; i++) {
+        // create new user thread that will run the "mainFuncOfNewThread" function
+        if (pthread_create(&threadsList[i], NULL, &mainFuncOfNewThread, tp) !=0 ) {
+            perror("thread creation failed");
+            free(tp);
+            free(threadsList);
+            exit(0);
+        }
+    }
     return tp;
 }
 
@@ -38,93 +62,112 @@ int tpInsertTask(ThreadPool* threadPool, void (*computeFunc) (void *), void* par
     if (threadPool->insertNewTasks) {
         //create struct of data for node in ready queue
         FuncAndParam *data = (FuncAndParam *) malloc(sizeof(FuncAndParam));
+        if (data == NULL) {
+            perror("malloc failed");
+            freeAll(threadPool);
+            exit(0);
+        }
         data->computeFunc = computeFunc;
         data->param = param;
-        pthread_mutex_lock(&threadPool->mutex);
-        printf("locked 42\n");
+        if (pthread_mutex_lock(&threadPool->mutex) != 0 ) {
+            perror("mutex lock failed");
+            freeAll(threadPool);
+            exit(0);
+        }
         // insert the new task to the RQ
         osEnqueue(threadPool->readyQueue, (void *) data);
-        pthread_mutex_unlock(&threadPool->mutex);
+        coin++;
+        if (coin == 5) {
+            printf("5 in\n");
+        }
+        printf("%d %p \n" , coin, data);
+        if (pthread_mutex_unlock(&threadPool->mutex) != 0 ) {
+            perror("mutex unlock failed");
+            freeAll(threadPool);
+            exit(0);
+        }
         threadPool->numOfTaskInRQ++;
-        printf("insert task unlock 42\n");
-        pthread_cond_signal(&threadPool->condition);
+        if (pthread_cond_signal(&threadPool->condition) != 0 ) {
+            perror("condition signal failed");
+            freeAll(threadPool);
+            exit(0);
+        }
+        return 0;
     } else {
-        // destory already freed all
+        if (pthread_mutex_lock(&threadPool->mutex) != 0 ) {
+            perror("mutex lock failed");
+            freeAll(threadPool);
+            exit(-1);
+        }
+        freeAll(threadPool);
         return -1;
     }
-    return 0;
+    //freeAll(threadPool);
 }
 
 // first function of all new threads
 void* mainFuncOfNewThread(void* tp){
     ThreadPool* threadPool = (ThreadPool*) tp;
     while (threadPool->runExistTasks) {
-        printf("in while\n");
         // if the tp destroyed && the queue is empty -stop and call the signal for
         if (!threadPool->insertNewTasks && osIsQueueEmpty(threadPool->readyQueue)) {
-            printf("need to break\n");
-            //pthread_mutex_unlock(&threadPool->mutex);
             break; // go to end of the function and kill himself
         }
         // if there is task already in the thread pool and this thread is not in wait- run the task
         if (threadPool->numOfTaskInRQ > 0 ) {
-            printf("num of task in RQ is non zero \n");
             pthread_mutex_lock(&threadPool->mutex);
-            printf("locked 71\n");
             void *topTask = osDequeue(threadPool->readyQueue);
-            printf("deQ in 72 %lu\n", pthread_self());
             threadPool->numOfTaskInRQ--;
             pthread_mutex_unlock(&threadPool->mutex);
-            printf("unlocked 71\n");
             // run the function
             if (topTask != NULL) {
                 FuncAndParam *data = (FuncAndParam *) topTask;
+                pthread_mutex_lock(&threadPool->mutex);
+                coout++;
+                printf("%d %p\n" , coout, data);
+                pthread_mutex_unlock(&threadPool->mutex);
                 data->computeFunc(data->param);
                 free(data);
+
             }
 
         }
-         else {   // makes the thread waiting until task was inserted to the readyQueue
+        else {   // makes the thread waiting until task was inserted to the readyQueue
             if (osIsQueueEmpty(threadPool->readyQueue)) {
-                printf("start waiting %lu\n", pthread_self());
                 pthread_mutex_lock(&(threadPool->mutexForCond));
+                printf("start waiting %lu\n", pthread_self());
                 pthread_cond_wait(&(threadPool->condition), &(threadPool->mutexForCond));
-                pthread_mutex_unlock(&(threadPool->mutexForCond));
                 printf("stop waiting %lu\n", pthread_self());
+                pthread_mutex_unlock(&(threadPool->mutexForCond));
             }
             // if the threadPool should still wait for new tasks- run the task from top of the readyQueue
             if (threadPool->runExistTasks && !osIsQueueEmpty(threadPool->readyQueue)) {
-                printf("after wait if wait\n");
                 pthread_mutex_lock(&threadPool->mutex);
-                printf("locked 95\n");
                 void *topTask = osDequeue(threadPool->readyQueue);
-                printf("deQ in 99 %lu\n", pthread_self());
                 threadPool->numOfTaskInRQ--;
                 pthread_mutex_unlock(&threadPool->mutex);
-                printf("unlocked 95\n");
                 // run the function
                 if (topTask != NULL) {
                     FuncAndParam *data = (FuncAndParam *) topTask;
                     data->computeFunc(data->param);
+                    pthread_mutex_lock(&threadPool->mutex);
+                    coout++;
+                    printf("%d %p\n" , coout, data);
+                    pthread_mutex_unlock(&threadPool->mutex);
                     free(data);
+
+                    //free(topTask);
                 }
             }
         }
-        //printf("end of while - or not exist or Q empty\n");
-        // ending of the function - the thread is free and continue waiting for more tasks
     }
-    printf("out of while\n");
-    //printf("in end\n");
-    if (pthread_cancel(pthread_self()) != 0) {
-        freeAll(tp);
-        perror("Error in System call");
-        exit(-1);
-    }
+    //free(threadPool);
+    //pthread_exit(NULL);
 }
 
 
 void tpDestroy(ThreadPool* threadPool, int shouldWaitForTasks) {
-    printf("in destroy - remove this line\n");
+    printf("in destroy\n");
     if (!shouldWaitForTasks) {
         //pthread_cond_wait(&(threadPool->conditionForEnd), &(threadPool->mutexForEnd));
         threadPool->runExistTasks = 0;
@@ -134,28 +177,39 @@ void tpDestroy(ThreadPool* threadPool, int shouldWaitForTasks) {
     }
 
     if (pthread_cond_broadcast(&threadPool->condition) != 0 ) {
-        printf("broadcast failed\n");
         perror("Error in system call");
     }
-    printf("after brodcast\n");
-    for (int i = 0; i < threadPool->maxNumOfTP; ++i) {
+    int i;
+    for (i = 0; i < threadPool->maxNumOfTP; ++i) {
         // wait for all the threads to end running
         pthread_join(threadPool->threads[i], NULL);
     }
-    printf("after join\n");
+    pthread_mutex_lock(&threadPool->mutex);
     freeAll(threadPool);
     //endTheProcess
 }
 
+void freeRQ(ThreadPool* threadPool) {
+    void *topTask = osDequeue(threadPool->readyQueue);
+    while(topTask != NULL) {
+        FuncAndParam *data = (FuncAndParam *) topTask;
+        coout++;
+        printf("des %d %p\n" , coout, data);
+        free(data);
+        topTask = osDequeue(threadPool->readyQueue);
+    }
+}
 
 void freeAll(ThreadPool* tp) {
     if (tp != NULL) {
         if (tp->readyQueue != NULL) {
+            freeRQ(tp);
             osDestroyQueue(tp->readyQueue);
         }
         if (tp->threads != NULL) {
-            free((tp->threads));
+            free(tp->threads);
         }
+        pthread_mutex_unlock(&tp->mutex);
         free(tp);
     }
 }
